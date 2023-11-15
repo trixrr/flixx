@@ -1,8 +1,20 @@
 const global = {                          // Router - route through our pages
-  currentPage: window.location.pathname   // this gives us the current page we are on.
+  currentPage: window.location.pathname,   // this gives us the current page we are on.
+  search: {      // reusable search defined here to be used in other functions                        
+    term: '',
+    type: '',
+    page: 1,
+    totalPages: 1,
+    totalResults: 0            
+  },
+  api: {
+    apiURL: 'https://api.themoviedb.org/3/',
+    apiKey: '22139c07e12166e6ee9f9b318a4544e5'
+  }
 }
 
 // console.log(global.currentPage);
+// console.log(global.search.term)
 
 
 
@@ -183,11 +195,11 @@ showDetails.appendChild(div)
 
 // Display Popular tv shows
   async function displayPopularShows() {
-    const  results  = await fetchAPIData('tv/popular') // making a call to this endpoint on TMDB / { results } destructuring to just give me the array
+    const  { results }  = await fetchAPIData('tv/popular') // making a call to this endpoint on TMDB / { results } destructuring to just give me the array
  
     console.log(results);
 
-    results.forEach(show => {
+    results.forEach((show) => {
       const popularShows = document.getElementById('popular-shows')
 
       const div = document.createElement('div')
@@ -242,8 +254,128 @@ showDetails.appendChild(div)
       document.querySelector('#show-details').appendChild(overlayDiv)
     }
   }
+//
+
+// Search Movies/Shows
+  async function search() {
+    const queryString = window.location.search
+    const urlParams = new URLSearchParams(queryString) // URlsearch allows me to return specific parts of the url using .get on the prototype fx. e.g console.log(urlParams.get('type')) --> tv/movie // the params are being defined in the form name on search.html
+
+    // console.log(urlParams.get('type'));   -- if confused about above, log these to understand
+    // console.log(queryString);
+
+    global.search.type = urlParams.get('type');
+    global.search.term = urlParams.get('search-term');
+
+    // console.log(global.search.type)
+
+    if (global.search.term !== '' && global.search.term !== null){
+      const { results, page, total_pages, total_results } = await searchAPIData();
+      // const r = await searchAPIData();  -- returns everything in object
+      const r = await searchAPIData();  
+      console.log(results, r);
+
+      global.search.page = page; // store these values in the global scope we set above. Pull from call > store in scope.
+      global.search.totalPages = total_pages;
+      global.search.totalResults = total_results;
+
+      if (results.length == 0) {
+        showAlert('No results found', 'alert-error')
+        return; // finish here - no further action required. Return to start.
+      }
+
+      displaySearchResults(results)
+
+      document.querySelector('#search-term').value = ''
+
+    } else {
+      showAlert('Please enter a search term', 'alert-error')
+    }
+  }
+// 
+
+// Display Search Results
+  function displaySearchResults(results) {
+    // Clear previous results
+    document.getElementById('search-results').innerHTML = ''
+    document.getElementById('search-results-heading').innerHTML = ''
+    document.getElementById('pagination').innerHTML = ''
 
 
+    results.forEach(search => {
+      const searchResults = document.getElementById('search-results')
+
+      const div = document.createElement('div')
+      div.classList.add('card')
+      div.innerHTML = `
+        <a href="${global.search.type}-details.html?id=${search.id}"> 
+         ${search.poster_path
+          ?   // if there is a movie/tv.poster.path then fill the image with that data from endpoint as seen beow
+        `<img
+        src="https://image.tmdb.org/t/p/w500/${search.poster_path}"
+        class="card-img-top"
+        alt="${global.search.type === 'movie' ? search.title : search.name}"
+        />` 
+          : // ELSE if there is no image or it is not working 404 - fill with code below (our filler no image)
+        `<img
+        src="images/no-image.jpg"
+        class="card-img-top"
+        alt="${global.search.type === 'movie' ? search.title : search.name}"
+      />`}  
+        </a>
+        <div class="card-body">
+          <h5 class="card-title">${global.search.type === 'movie' ? search.title : search.name}</h5>
+          <p class="card-text">
+            <small class="text-muted">Release: ${global.search.type === 'movie' ? search.release_date : search.first_air_date}</small>
+          </p>
+        </div>
+        `
+
+        document.querySelector('#search-results-heading').innerHTML = `
+          <h2>${results.length} of ${global.search.totalResults} Results for ${global.search.term}</h2>`
+
+        searchResults.appendChild(div)
+    })
+
+    // Create & Display pagination for search
+    displayPagination() 
+  }
+// 
+
+// Create & Display pagination for search
+  function displayPagination() {
+    const div = document.createElement('div');
+    div.classList.add('pagination')
+
+    div.innerHTML = `
+      <button class="btn btn-primary" id="prev">Prev</button>
+      <button class="btn btn-primary" id="next">Next</button>
+      <div class="page-counter">Page ${global.search.page} of ${global.search.totalPages}</div>`
+
+    document.getElementById('pagination').appendChild(div)
+
+    // Disable previous button
+    if (global.search.page == 1) {
+      document.getElementById('prev').disabled = true;
+    }
+
+    if (global.search.page == global.search.totalPages) {
+      document.getElementById('next').disabled = true;
+    }
+
+    // Go to next page
+    document.querySelector('#next').addEventListener('click', async () => { // run async function
+        global.search.page++ // add on to page when clicked
+        const { results, total_pages } = await searchAPIData() // destructuring to just return results and total pages from searchapi func call
+        displaySearchResults(results) // display in dom again. 
+    })
+    // Go to prev page
+    document.querySelector('#prev').addEventListener('click', async () => { // run async function
+        global.search.page-- // add on to page when clicked
+        const { results, total_pages } = await searchAPIData() // destructuring to just return results and total pages from searchapi func call
+        displaySearchResults(results) // display in dom again. 
+    })
+  }
 // 
 
 
@@ -261,24 +393,50 @@ showDetails.appendChild(div)
         <img src="https://image.tmdb.org/t/p/w500${movie.poster_path}" alt="Movie Title" />
       </a>
       <h4 class="swiper-rating">
-        <i class="fas fa-star text-secondary"></i> ${movie.vote_average} / 10
+        <i class="fas fa-star text-secondary"></i> ${movie.vote_average.toFixed()} / 10
       </h4>`
 
       let wrapper = document.querySelector('.swiper-wrapper')
 
       wrapper.appendChild(div)
+
+      initSwiper()
     })
-
-
-    
   }
+
+
+// Initalise Swiper
+  function initSwiper() {
+    const swiper = new Swiper('.swiper', {
+      slidesPerView: 1,
+      spaceBetween: 30,
+      freeMode: true,
+      loop: true,
+      autoplay: {
+        delay: 4000,
+        disableOnInteraction: false
+      }, 
+      breakpoints: {
+        500: {
+          slidesPerView: 2
+        },
+        700: {
+          slidesPerView: 3
+        },
+        1200: {
+          slidesPerView: 4
+        }
+      }
+    })
+  }
+
 
 // 
 
 // Fetch data from TMD API
   async function fetchAPIData(endpoint) {
-    const API_URL = 'https://api.themoviedb.org/3/'
-    const API_KEY = '22139c07e12166e6ee9f9b318a4544e5'
+    const API_URL =  global.api.apiURL
+    const API_KEY =  global.api.apiKey
 
     // Before/whilst fetching data show the spinner
     showSpinner()
@@ -294,6 +452,29 @@ showDetails.appendChild(div)
     return data; // give me this.
   }
 // 
+
+// Search data from TMD API
+  async function searchAPIData() {
+    const API_URL =  global.api.apiURL
+    const API_KEY =  global.api.apiKey
+
+    // Before/whilst fetching data show the spinner
+    showSpinner()
+
+    const response = await fetch(`${API_URL}search/${global.search.type}?api_key=${API_KEY}&language=en-US&query=${global.search.term}&page=${global.search.page}`)
+    // going to retrieve data from sites endpoints, first using the URL, the search term then specifying our key
+    // apilurl then on tmdb docs - it says to use search/   then we specify the type (tv/movies)
+
+    const data = await response.json()
+
+    // Hide spinner after the data is gathered
+    hideSpinner()
+
+    return data; // give me this.
+  }
+// 
+
+
 
 // Show & Hide Spinner
   function showSpinner() {
@@ -314,6 +495,20 @@ showDetails.appendChild(div)
       }
     })
   }
+// 
+
+
+// Show alert
+  function showAlert(message, className) {
+    const alertEl = document.createElement('div')
+    alertEl.classList.add('alert', className)
+    alertEl.appendChild(document.createTextNode(message))
+
+    document.getElementById('alert').appendChild(alertEl)
+
+    setTimeout(() => alertEl.remove(), 3000) // remove the alert after 3 seconds
+  }
+
 // 
 
 // Init App
@@ -338,7 +533,7 @@ function init() {
       displayShowDetails()
       break;
     case '/search.html':
-      console.log('Search');
+      search();
       break
   }
 
